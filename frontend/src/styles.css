@@ -1,0 +1,39 @@
+:root {
+  --bg: #0b1020;
+  --panel: #141b33;
+  --line: #27315a;
+  --text: #e8ecff;
+  --muted: #8f9acb;
+  --accent: #5b8cff;
+  --good: #2fd39b;
+  --bad: #ff5d73;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #1b2760 0%, var(--bg) 60%); color: var(--text); min-height: 100vh; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+h1 { margin: 0; font-size: 28px; letter-spacing: -0.5px; }
+h2 { margin: 0 0 8px; font-size: 18px; }
+.sub { margin: 4px 0 0; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+.stat span { color: var(--muted); font-size: 13px; }
+.stat b { font-size: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.warn { border-color: #b8860b; background: #2a2410; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+input { background: #0e1430; border: 1px solid var(--line); color: var(--text); padding: 10px 12px; border-radius: 8px; width: 140px; font-size: 15px; }
+button { background: var(--accent); color: white; border: 0; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+button:hover:not(:disabled) { filter: brightness(1.1); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+button.danger { background: var(--bad); }
+.pill { background: #0e1430; border: 1px solid var(--line); padding: 8px 12px; border-radius: 999px; font-family: ui-monospace, monospace; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.log { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.log span { color: var(--muted); margin-right: 6px; font-family: ui-monospace, monospace; }
+.log a { color: var(--accent); }
+code { background: #0e1430; padding: 2px 6px; border-radius: 4px; }
+@media (max-width: 520px) { input { width: 100%; } }

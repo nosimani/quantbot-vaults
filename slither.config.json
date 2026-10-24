@@ -1,0 +1,5 @@
+{
+  "filter_paths": "node_modules|contracts/mocks",
+  "solc_remaps": "@openzeppelin/=node_modules/@openzeppelin/",
+  "hardhat_ignore_compile": false
+}
