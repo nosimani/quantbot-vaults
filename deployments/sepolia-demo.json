@@ -1,0 +1,65 @@
+{
+  "ranAt": "2026-10-25T14:49:01.808Z",
+  "evidence": [
+    {
+      "step": "1. Faucet de mUSDC",
+      "txHash": "0x2e8ceab450afc91bd1b329bfc2794de117dc1ba08e1cf8da104a591a45e55837",
+      "block": 11991551,
+      "link": "https://sepolia.etherscan.io/tx/0x2e8ceab450afc91bd1b329bfc2794de117dc1ba08e1cf8da104a591a45e55837"
+    },
+    {
+      "step": "2. Approve del vault",
+      "txHash": "0xcbfcca8588bf754715a590d71bcabf603c99b75d84a57056456f1547d72ca7b8",
+      "block": 11991552,
+      "link": "https://sepolia.etherscan.io/tx/0xcbfcca8588bf754715a590d71bcabf603c99b75d84a57056456f1547d72ca7b8"
+    },
+    {
+      "step": "3. Depósito de 1000 mUSDC",
+      "txHash": "0xd2f00997b0f83b0b3e3a7fe57e784d7ba0253d60d6b46ebf554ab4c7c5c93e78",
+      "block": 11991553,
+      "link": "https://sepolia.etherscan.io/tx/0xd2f00997b0f83b0b3e3a7fe57e784d7ba0253d60d6b46ebf554ab4c7c5c93e78"
+    },
+    {
+      "step": "4. Bot asigna 500.0 mUSDC a la estrategia",
+      "txHash": "0x5263b46a792964a13cff058a85f6f73e40898e29572572135a3b7643805ccc1c",
+      "block": 11991554,
+      "link": "https://sepolia.etherscan.io/tx/0x5263b46a792964a13cff058a85f6f73e40898e29572572135a3b7643805ccc1c"
+    },
+    {
+      "step": "5. Approve de la estrategia",
+      "txHash": "0x15ac4509a9306352a72fb86647bcfcf6cfb6dd48edb748234c2605967a67afb4",
+      "block": 11991555,
+      "link": "https://sepolia.etherscan.io/tx/0x15ac4509a9306352a72fb86647bcfcf6cfb6dd48edb748234c2605967a67afb4"
+    },
+    {
+      "step": "6. Bot reporta ganancia de +50 mUSDC",
+      "txHash": "0xbd279ea5a001bae23539d6f112109d6fd1231f7b360326edbf66303b83d2200d",
+      "block": 11991556,
+      "link": "https://sepolia.etherscan.io/tx/0xbd279ea5a001bae23539d6f112109d6fd1231f7b360326edbf66303b83d2200d"
+    },
+    {
+      "step": "7. Harvest (cobro de fee de performance)",
+      "txHash": "0x8520caccf2221be249248c708f1ef322b055a4155c647ce330e95793eae91660",
+      "block": 11991557,
+      "link": "https://sepolia.etherscan.io/tx/0x8520caccf2221be249248c708f1ef322b055a4155c647ce330e95793eae91660"
+    },
+    {
+      "step": "8. Health check de la estrategia (circuit breaker)",
+      "txHash": "0x89a54008b5dbd0150cb7f854161d9eb9bc009a46803b2cea8cb006f7e61fae5c",
+      "block": 11991558,
+      "link": "https://sepolia.etherscan.io/tx/0x89a54008b5dbd0150cb7f854161d9eb9bc009a46803b2cea8cb006f7e61fae5c"
+    },
+    {
+      "step": "9. Recall de 550.0 mUSDC",
+      "txHash": "0x6497084747d4991c3c99509915a080de5dc53ddf8556fa84480334787e64a8c1",
+      "block": 11991559,
+      "link": "https://sepolia.etherscan.io/tx/0x6497084747d4991c3c99509915a080de5dc53ddf8556fa84480334787e64a8c1"
+    },
+    {
+      "step": "10. Redeem de las shares del depósito",
+      "txHash": "0xa1cbb31bdf31674ce5f353967b842cf9a99ba9a91688271151739098ba46009f",
+      "block": 11991560,
+      "link": "https://sepolia.etherscan.io/tx/0xa1cbb31bdf31674ce5f353967b842cf9a99ba9a91688271151739098ba46009f"
+    }
+  ]
+}

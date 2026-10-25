@@ -205,29 +205,28 @@ Desde la UI: conectar wallet → *faucet* → aprobar → depositar → (cuenta 
 
 ## 9. Red y contratos desplegados
 
-> ⚠️ **Completar después de ejecutar el deploy.** No inventar valores: copiar de `deployments/sepolia.json` y `deployments/sepolia-demo.json`.
-
 **Red:** Sepolia (chainId 11155111)
 
 | Contrato | Dirección | Código verificado |
 |---|---|---|
-| MockUSDC | `0x…` | `https://sepolia.etherscan.io/address/0x…#code` |
-| QuantBotVault | `0x…` | `https://sepolia.etherscan.io/address/0x…#code` |
-| MockTradingStrategy | `0x…` | `https://sepolia.etherscan.io/address/0x…#code` |
+| MockUSDC | `0xbfB3807973FD1334BcB2B3452C1DB085437f2005` | https://sepolia.etherscan.io/address/0xbfB3807973FD1334BcB2B3452C1DB085437f2005#code |
+| QuantBotVault | `0x47853947791FFd06d3046D895A0806deAf58FeD6` | https://sepolia.etherscan.io/address/0x47853947791FFd06d3046D895A0806deAf58FeD6#code |
+| MockTradingStrategy | `0xDB609B4e14eeE055d125414B9A05F6D5c0297184` | https://sepolia.etherscan.io/address/0xDB609B4e14eeE055d125414B9A05F6D5c0297184#code |
 
 **Transacciones reales del flujo principal** (salida de `npm run demo:sepolia`):
 
-| Paso | Hash / link |
+| Paso | Transacción |
 |---|---|
-| 1. Faucet mUSDC | `0x…` |
-| 2. Approve | `0x…` |
-| 3. Depósito de 1000 mUSDC | `0x…` |
-| 4. Bot asigna capital | `0x…` |
-| 6. Bot reporta ganancia | `0x…` |
-| 7. Harvest (fee) | `0x…` |
-| 8. Health check | `0x…` |
-| 9. Recall | `0x…` |
-| 10. Redeem | `0x…` |
+| 1. Faucet de mUSDC | [0x2e8ceab450…](https://sepolia.etherscan.io/tx/0x2e8ceab450afc91bd1b329bfc2794de117dc1ba08e1cf8da104a591a45e55837) |
+| 2. Approve del vault | [0xcbfcca8588…](https://sepolia.etherscan.io/tx/0xcbfcca8588bf754715a590d71bcabf603c99b75d84a57056456f1547d72ca7b8) |
+| 3. Depósito de 1000 mUSDC | [0xd2f00997b0…](https://sepolia.etherscan.io/tx/0xd2f00997b0f83b0b3e3a7fe57e784d7ba0253d60d6b46ebf554ab4c7c5c93e78) |
+| 4. Bot asigna 500.0 mUSDC a la estrategia | [0x5263b46a79…](https://sepolia.etherscan.io/tx/0x5263b46a792964a13cff058a85f6f73e40898e29572572135a3b7643805ccc1c) |
+| 5. Approve de la estrategia | [0x15ac4509a9…](https://sepolia.etherscan.io/tx/0x15ac4509a9306352a72fb86647bcfcf6cfb6dd48edb748234c2605967a67afb4) |
+| 6. Bot reporta ganancia de +50 mUSDC | [0xbd279ea5a0…](https://sepolia.etherscan.io/tx/0xbd279ea5a001bae23539d6f112109d6fd1231f7b360326edbf66303b83d2200d) |
+| 7. Harvest (cobro de fee de performance) | [0x8520caccf2…](https://sepolia.etherscan.io/tx/0x8520caccf2221be249248c708f1ef322b055a4155c647ce330e95793eae91660) |
+| 8. Health check de la estrategia (circuit breaker) | [0x89a54008b5…](https://sepolia.etherscan.io/tx/0x89a54008b5dbd0150cb7f854161d9eb9bc009a46803b2cea8cb006f7e61fae5c) |
+| 9. Recall de 550.0 mUSDC | [0x6497084747…](https://sepolia.etherscan.io/tx/0x6497084747d4991c3c99509915a080de5dc53ddf8556fa84480334787e64a8c1) |
+| 10. Redeem de las shares del depósito | [0xa1cbb31bdf…](https://sepolia.etherscan.io/tx/0xa1cbb31bdf31674ce5f353967b842cf9a99ba9a91688271151739098ba46009f) |
 
 ---
 

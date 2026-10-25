@@ -1,0 +1,43 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployer": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+  "deployedAt": "2026-10-25T00:10:12.827Z",
+  "explorer": "https://sepolia.etherscan.io",
+  "contracts": {
+    "asset": {
+      "address": "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
+      "isMock": true,
+      "constructorArgs": []
+    },
+    "vault": {
+      "address": "0x47853947791FFd06d3046D895A0806deAf58FeD6",
+      "constructorArgs": [
+        "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
+        "QuantBot Vault Shares",
+        "qbvUSD",
+        "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+        "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+        2000,
+        "1000000000000",
+        1000,
+        1000
+      ]
+    },
+    "strategy": {
+      "address": "0xDB609B4e14eeE055d125414B9A05F6D5c0297184",
+      "constructorArgs": [
+        "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
+        "0x47853947791FFd06d3046D895A0806deAf58FeD6",
+        "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+        2000
+      ]
+    }
+  },
+  "roles": {
+    "admin": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+    "operator": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+    "guardian": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
+    "treasury": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4"
+  }
+}
