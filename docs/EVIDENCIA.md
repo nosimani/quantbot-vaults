@@ -1,40 +1,36 @@
-# Evidencia de entrega (completar con salidas reales)
+# Evidencia de entrega
 
-Este archivo guarda la evidencia que pide el checklist. **No se completó automáticamente** porque
-requiere ejecutar el proyecto con acceso a red (npm, RPC de Sepolia, Etherscan).
+Generado el 2026-10-25 en GitHub Codespaces.
 
-## 1. Tests
-
-```bash
-npm test
-```
-
-Pegar el resumen (`N passing`, 0 failing):
+## Tests (npm test)
 
 ```
+  42 passing (3s)
 ```
 
-## 2. Coverage (objetivo: > 40 % en todas las métricas)
-
-```bash
-npm run coverage
-```
+## Coverage (npm run coverage)
 
 ```
+--------------------------|----------|----------|----------|----------|----------------|
+File                      |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
+--------------------------|----------|----------|----------|----------|----------------|
+ contracts/               |    96.97 |    82.64 |    97.14 |    97.48 |                |
+  QuantBotVault.sol       |    96.97 |    82.64 |    97.14 |    97.48 |304,510,556,557 |
+ contracts/interfaces/    |      100 |      100 |      100 |      100 |                |
+  IStrategy.sol           |      100 |      100 |      100 |      100 |                |
+ contracts/mocks/         |      100 |      100 |      100 |      100 |                |
+  MockUSDC.sol            |      100 |      100 |      100 |      100 |                |
+ contracts/strategies/    |      100 |    95.83 |      100 |      100 |                |
+  MockTradingStrategy.sol |      100 |    95.83 |      100 |      100 |                |
+--------------------------|----------|----------|----------|----------|----------------|
+All files                 |    97.44 |    84.88 |    97.83 |    97.92 |                |
+--------------------------|----------|----------|----------|----------|----------------|
 ```
 
-## 3. Slither
+## Slither
 
-Ver `docs/SLITHER.md`.
+Ver docs/SLITHER.md.
 
-## 4. Despliegue y verificación
+## Despliegue, verificacion y transacciones
 
-Pegar el contenido de `deployments/sepolia.json` (direcciones) y las URLs de código verificado.
-
-## 5. Transacciones del flujo principal
-
-Pegar la tabla de `deployments/sepolia-demo.json`.
-
-## 6. Video (máx. 5 min)
-
-Link:
+Ver la seccion 9 del README.md, deployments/sepolia.json y deployments/sepolia-demo.json.

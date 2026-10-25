@@ -153,7 +153,7 @@ Cobertura de escenarios (3 archivos):
 - **Riesgo:** circuit breaker por drawdown, high-water mark (sin doble cobro), depósito nuevo no se cobra como ganancia, pausa que no bloquea retiros, `emergencyRecallAll`.
 - **Invariante:** lo reclamable por todos los holders nunca excede `totalAssets` en una secuencia determinística de operaciones.
 
-> Resultado de coverage: ver `docs/EVIDENCIA.md` (completar con la salida real de `npm run coverage`; el requisito es superar el 40 % en todas las métricas).
+> Resultado: 42 tests pasando. Coverage: Statements 97.44 %, Branches 84.88 %, Functions 97.83 %, Lines 97.92 % (detalle en docs/EVIDENCIA.md).
 
 ---
 
@@ -164,7 +164,7 @@ pip install slither-analyzer      # una sola vez
 npm run slither                   # = slither . --config-file slither.config.json
 ```
 
-La configuración (`slither.config.json`) excluye `node_modules` y `contracts/mocks`. El análisis previo y la justificación de los findings esperados está en [`docs/SLITHER.md`](docs/SLITHER.md).
+La configuración (`slither.config.json`) excluye `node_modules` y `contracts/mocks`. El resultado real de la ejecución y la justificación de cada finding está en [`docs/SLITHER.md`](docs/SLITHER.md).
 
 ---
 
