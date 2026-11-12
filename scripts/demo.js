@@ -43,6 +43,8 @@ async function main() {
     const link = explorer ? `${explorer}/tx/${receipt.hash}` : receipt.hash;
     evidence.push({ step: label, txHash: receipt.hash, block: receipt.blockNumber, link });
     console.log(`✔ ${label}\n    ${link}`);
+    // En redes públicas el RPC puede devolver lecturas atrasadas un instante: se espera un poco.
+    if (!isLocal) await new Promise((r) => setTimeout(r, 4000));
     return receipt;
   };
 
@@ -56,10 +58,18 @@ async function main() {
 
   // 2) Aprobar y depositar
   await step("2. Approve del vault", token.approve(v.address, ethers.MaxUint256));
-  const sharesBefore = await vault.balanceOf(signer.address);
-  await step("3. Depósito de 1000 mUSDC", vault.deposit(usdc(1000), signer.address));
-  // Shares propias de este depósito (si el treasury es la misma cuenta, no se mezclan con las del fee)
-  const userShares = (await vault.balanceOf(signer.address)) - sharesBefore;
+  const depositReceipt = await step("3. Depósito de 1000 mUSDC", vault.deposit(usdc(1000), signer.address));
+  // Shares de ESTE depósito, leídas del evento Deposit (no dependen de lecturas del RPC que pueden estar atrasadas)
+  const eventArg = (receipt, name, arg) => {
+    for (const l of receipt.logs) {
+      try {
+        const parsed = vault.interface.parseLog(l);
+        if (parsed && parsed.name === name) return parsed.args[arg];
+      } catch (_) {}
+    }
+    throw new Error(`No se encontró el evento ${name} en la transacción`);
+  };
+  const userShares = eventArg(depositReceipt, "Deposit", "shares");
 
   // 3) El bot asigna capital a la estrategia
   const total = await vault.totalAssets();
@@ -94,11 +104,10 @@ async function main() {
   const inStrategy = await strategy.totalAssets();
   await step(`10. Recall de ${fmt(inStrategy)} mUSDC`, vault.recall(s.address, inStrategy));
 
-  const before = await token.balanceOf(signer.address);
-  await step("11. Redeem de las shares del depósito", vault.redeem(userShares, signer.address, signer.address));
-  const after = await token.balanceOf(signer.address);
+  const redeemReceipt = await step("11. Redeem de las shares del depósito", vault.redeem(userShares, signer.address, signer.address));
+  const received = eventArg(redeemReceipt, "Withdraw", "assets");
 
-  console.log(`\nRetiro recibido: ${fmt(after - before)} mUSDC (depositó 1000; ganancia neta de fee)`);
+  console.log(`\nRetiro recibido: ${fmt(received)} mUSDC (depositó 1000; ganancia neta de fee)`);
   console.log(`Shares del treasury (fee): ${ethers.formatUnits(await vault.balanceOf(deployment.roles.treasury), 9)}`);
 
   if (!isLocal) {

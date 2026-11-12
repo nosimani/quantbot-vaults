@@ -2,18 +2,18 @@
   "network": "sepolia",
   "chainId": 11155111,
   "deployer": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
-  "deployedAt": "2026-10-25T00:10:12.827Z",
+  "deployedAt": "2026-11-12T22:07:25.485Z",
   "explorer": "https://sepolia.etherscan.io",
   "contracts": {
     "asset": {
-      "address": "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
+      "address": "0x084b3e26Ed2F1842FF3fA4A0433Cf8262137828e",
       "isMock": true,
       "constructorArgs": []
     },
     "vault": {
-      "address": "0x47853947791FFd06d3046D895A0806deAf58FeD6",
+      "address": "0x26EC1c9818D58D55D8381C20cffF446c2485f71B",
       "constructorArgs": [
-        "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
+        "0x084b3e26Ed2F1842FF3fA4A0433Cf8262137828e",
         "QuantBot Vault Shares",
         "qbvUSD",
         "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
@@ -25,10 +25,10 @@
       ]
     },
     "strategy": {
-      "address": "0xDB609B4e14eeE055d125414B9A05F6D5c0297184",
+      "address": "0x9D739cD0D3ecE1073465c068c6E68DE2279699f5",
       "constructorArgs": [
-        "0xbfB3807973FD1334BcB2B3452C1DB085437f2005",
-        "0x47853947791FFd06d3046D895A0806deAf58FeD6",
+        "0x084b3e26Ed2F1842FF3fA4A0433Cf8262137828e",
+        "0x26EC1c9818D58D55D8381C20cffF446c2485f71B",
         "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
         2000
       ]
@@ -39,5 +39,6 @@
     "operator": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
     "guardian": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4",
     "treasury": "0x24cFd26797F5581E525A9BBFEC1D8817d85b0AA4"
-  }
+  },
+  "profitUnlockPeriod": 60
 }
