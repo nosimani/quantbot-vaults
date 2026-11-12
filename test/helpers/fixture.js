@@ -9,6 +9,7 @@ const MIN_IDLE_BPS = 1000; // 10 % siempre líquido
 const MAX_DRAWDOWN_BPS = 1000; // 10 % de pérdida dispara el circuit breaker
 const STRATEGY_CAP_BPS = 5000; // máx. 50 % del vault en la estrategia
 const MAX_LOSS_PER_TRADE_BPS = 2000; // el bot no puede perder más de 20 % por operación
+const PROFIT_UNLOCK_PERIOD = 3600; // las ganancias se liberan linealmente en 1 hora
 
 /**
  * Despliega el protocolo completo y deja roles configurados:
@@ -44,6 +45,7 @@ async function deployFixture() {
   await vault.grantRole(await vault.GUARDIAN_ROLE(), guardian.address);
   await strategy.grantRole(await strategy.BOT_ROLE(), operator.address);
   await vault.addStrategy(strategyAddr, STRATEGY_CAP_BPS);
+  await vault.setProfitUnlockPeriod(PROFIT_UNLOCK_PERIOD);
 
   // Fondos de prueba
   for (const user of [alice, bob, operator]) {
@@ -65,4 +67,5 @@ module.exports = {
   MAX_DRAWDOWN_BPS,
   STRATEGY_CAP_BPS,
   MAX_LOSS_PER_TRADE_BPS,
+  PROFIT_UNLOCK_PERIOD,
 };

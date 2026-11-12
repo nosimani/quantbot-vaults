@@ -48,3 +48,13 @@ Corregidos: ninguno requirió cambios en el código
 Aceptados / falsos positivos: justificados arriba
 Fuera de alcance: OpenZeppelin y contracts/mocks (excluidos en slither.config.json)
 ```
+## Actualización tras las correcciones del docente
+
+El contrato cambió (liberación gradual de ganancias, reporte de estrategias, comisión pendiente en las vistas), así que **hay que volver a correr `npm run slither`** y actualizar la tabla de arriba con el resultado real. Hallazgos nuevos esperables y su clasificación:
+
+| Detector | Dónde | Clasificación | Justificación |
+|---|---|---|---|
+| `timestamp` | `_remainingLockedProfit` | Aceptado | Usa `block.timestamp` solo para una liberación lineal con período mínimo de 60 s; un validador puede desviar el timestamp segundos, lo que cambia la liberación en una fracción mínima. |
+| `calls-loop` | `totalAssets`, `harvest`, `emergencyRecallAll` | Aceptado | Bucles acotados por `MAX_STRATEGIES = 10` sobre estrategias registradas por el admin. |
+| `reentrancy-*` | `recall`, `emergencyRecallAll` | Aceptado | Protegidas por `nonReentrant`; `debt` se concilia con lo realmente recibido. |
+| `incorrect-equality` | comparaciones contra 0 | Falso positivo | Evitan trabajo inútil o divisiones por cero; no dependen de balances manipulables. |

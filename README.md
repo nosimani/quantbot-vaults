@@ -34,6 +34,8 @@ QuantBot Vaults es una **bóveda ERC-4626** donde los usuarios depositan un toke
 | Reserva mínima de liquidez (`minIdleBps`) | Dejar el vault sin liquidez para retiros. |
 | Circuit breaker (`maxDrawdownBps`) | Seguir asignando a una estrategia que ya perdió más de lo tolerado (cualquiera puede dispararlo, solo reduce riesgo). |
 | Pausa / `emergencyRecallAll` (rol guardián) | Daño prolongado ante un incidente: pausa depósitos y recupera todo el capital posible. **Los retiros nunca se bloquean por la pausa.** |
+| Liberación gradual de ganancias (`profitUnlockPeriod`) | Que alguien deposite justo antes de una ganancia y retire justo después para quedarse con rendimiento ajeno. Las ganancias se reconocen al reportarse, se bloquean y se liberan linealmente. |
+| Pérdidas reconocidas de inmediato | Que alguien retire a precio viejo después de una pérdida. Las pérdidas bajan `totalAssets` en el acto, consumen primero la ganancia bloqueada, dan de baja la deuda y activan el circuit breaker. |
 | Fee de performance con *high-water mark* | Cobrar comisión dos veces sobre la misma ganancia o cobrar sobre depósitos nuevos. Se paga acuñando shares al treasury. |
 | Tope de depósitos (`depositCap`) | Exposición excesiva durante la fase MVP. |
 
@@ -41,9 +43,10 @@ QuantBot Vaults es una **bóveda ERC-4626** donde los usuarios depositan un toke
 
 ```
 usuario ──deposit──▶ Vault ──allocate (bot)──▶ Strategy
-                        ▲                          │ executeTrade(+pnl)  (el bot reporta ganancia)
+                        ▲                          │ executeTrade(+pnl) ─▶ el vault reconoce la ganancia,
+                        │                          │                        la BLOQUEA y la libera linealmente
                         └────── recall ◀───────────┘
-usuario ◀─redeem (capital + ganancia − fee)─ Vault          harvest ─▶ mint de shares de fee al treasury
+usuario ◀─redeem (capital + ganancia liberada − fee)─ Vault     harvest ─▶ mint de shares de fee al treasury
 ```
 
 ---
@@ -146,14 +149,16 @@ npm run coverage       # reporte en consola + coverage/index.html
 npm run gas            # reporte de gas (opcional)
 ```
 
-Cobertura de escenarios (3 archivos):
+Cobertura de escenarios (5 archivos):
 
 - **Éxito del flujo principal:** depósito → allocate → ganancia del bot → harvest (fee) → recall → redeem con rendimiento.
 - **Reverts / errores:** permisos (`AccessControlUnauthorizedAccount`), allocate a dirección no registrada, monto cero, liquidez insuficiente, tope por estrategia, reserva mínima, parámetros inválidos del constructor, tope de depósitos, pausa, estrategia incompatible, `MAX_STRATEGIES`, pérdida por encima del límite.
 - **Riesgo:** circuit breaker por drawdown, high-water mark (sin doble cobro), depósito nuevo no se cobra como ganancia, pausa que no bloquea retiros, `emergencyRecallAll`.
 - **Invariante:** lo reclamable por todos los holders nunca excede `totalAssets` en una secuencia determinística de operaciones.
+- **Seguridad (`QuantBotVault.security.test.js`):** ataque de depósito/retiro oportunista (ya no deja rendimiento), liberación lineal de ganancias, `recall`/`emergencyRecallAll` que no saltean el bloqueo, pérdidas dadas de baja (sin deuda residual ni disparos espurios del circuit breaker), pérdida que consume ganancia bloqueada, `previewRedeem`/`previewWithdraw`/`previewDeposit` exactos con comisión pendiente.
+- **Fuzzing e invariantes (`QuantBotVault.fuzz.test.js`):** 6 semillas × 60 operaciones aleatorias reproducibles (depósitos, retiros, asignaciones, ganancias, pérdidas, donaciones, harvest, tiempo y ataques oportunistas). Después de cada operación se verifican: solvencia, reclamable ≤ `totalAssets`, conservación de tokens, precio por share no decreciente salvo pérdidas, `previewRedeem` ≤ lo entregado, "sin almuerzo gratis" y cierre sin fondos atrapados.
 
-> Resultado: 42 tests pasando. Coverage: Statements 97.44 %, Branches 84.88 %, Functions 97.83 %, Lines 97.92 % (detalle en docs/EVIDENCIA.md).
+> Resultados reales (cantidad de tests y coverage): ver [`docs/EVIDENCIA.md`](docs/EVIDENCIA.md). Detalle de cada corrección: [`docs/CORRECCIONES.md`](docs/CORRECCIONES.md).
 
 ---
 
@@ -186,9 +191,10 @@ npx hardhat run scripts/demo.js          # despliega en la red en memoria y corr
 npm run deploy:sepolia      # despliega MockUSDC, QuantBotVault, MockTradingStrategy + roles
 npm run verify:sepolia      # verifica los 3 contratos e imprime la URL del código verificado
 npm run demo:sepolia        # corre el flujo principal on-chain y guarda los hashes
+node scripts/update-readme.js   # rellena la sección 9 del README con las direcciones y hashes reales
 ```
 
-`deploy` escribe `deployments/sepolia.json` (direcciones y argumentos de constructor) y `demo` escribe `deployments/sepolia-demo.json` con los hashes y links de cada transacción. **Copiar esos datos a la sección 9 de este README.**
+`deploy` escribe `deployments/sepolia.json` (direcciones y argumentos de constructor) y `demo` escribe `deployments/sepolia-demo.json` con los hashes y links de cada transacción. En la demo la ganancia reportada queda bloqueada y el script espera el período de liberación (`PROFIT_UNLOCK_PERIOD`, 60 s en testnet) antes de cobrar la comisión y retirar.
 
 ### 8.3 Frontend
 
@@ -199,39 +205,29 @@ cp .env.example .env     # pegar las direcciones de deployments/sepolia.json
 npm run dev              # http://localhost:5173
 ```
 
-Desde la UI: conectar wallet → *faucet* → aprobar → depositar → (cuenta con roles de operador/bot) asignar al bot, reportar ganancia/pérdida, harvest, chequear drawdown → retirar. Los botones de operador/bot/guardián se habilitan solo si la cuenta tiene el rol on-chain. Cada transacción muestra un link al explorer.
+La app se puede **ver sin wallet** (modo lectura con un RPC público de Sepolia) y se conecta con MetaMask para operar. Desde la UI: conectar wallet → *faucet* → aprobar → depositar → (cuenta con roles de operador/bot) asignar al bot, reportar ganancia/pérdida, reportar y cobrar fee, chequear drawdown → retirar. El panel de protección muestra la ganancia bloqueada y cuánto falta para liberarla. Los botones de operador/bot/guardián se habilitan solo si la cuenta tiene el rol on-chain. Cada transacción muestra un link al explorer.
+
+**Frontend publicado:** https://nosimani.github.io/quantbot-vaults/ (se despliega automáticamente con GitHub Actions al hacer push a `main`; ver `.github/workflows/deploy-frontend.yml`). Alternativa: importar el repo en Vercel con *Root Directory* `frontend` y las variables `VITE_*` de `frontend/.env.example`.
+
+### 8.4 Video de la demo
+
+Video (máx. 5 min) con la demo del flujo principal en Sepolia: **<COMPLETAR: link al video>** (también entregado en la carpeta de entrega del Drive como `Apellido_QuantBotVaults_Video.mp4`). Guion: [`docs/GUION_VIDEO.md`](docs/GUION_VIDEO.md).
 
 ---
 
 ## 9. Red y contratos desplegados
 
-**Red:** Sepolia (chainId 11155111)
-
-| Contrato | Dirección | Código verificado |
-|---|---|---|
-| MockUSDC | `0xbfB3807973FD1334BcB2B3452C1DB085437f2005` | https://sepolia.etherscan.io/address/0xbfB3807973FD1334BcB2B3452C1DB085437f2005#code |
-| QuantBotVault | `0x47853947791FFd06d3046D895A0806deAf58FeD6` | https://sepolia.etherscan.io/address/0x47853947791FFd06d3046D895A0806deAf58FeD6#code |
-| MockTradingStrategy | `0xDB609B4e14eeE055d125414B9A05F6D5c0297184` | https://sepolia.etherscan.io/address/0xDB609B4e14eeE055d125414B9A05F6D5c0297184#code |
-
-**Transacciones reales del flujo principal** (salida de `npm run demo:sepolia`):
-
-| Paso | Transacción |
-|---|---|
-| 1. Faucet de mUSDC | [0x2e8ceab450…](https://sepolia.etherscan.io/tx/0x2e8ceab450afc91bd1b329bfc2794de117dc1ba08e1cf8da104a591a45e55837) |
-| 2. Approve del vault | [0xcbfcca8588…](https://sepolia.etherscan.io/tx/0xcbfcca8588bf754715a590d71bcabf603c99b75d84a57056456f1547d72ca7b8) |
-| 3. Depósito de 1000 mUSDC | [0xd2f00997b0…](https://sepolia.etherscan.io/tx/0xd2f00997b0f83b0b3e3a7fe57e784d7ba0253d60d6b46ebf554ab4c7c5c93e78) |
-| 4. Bot asigna 500.0 mUSDC a la estrategia | [0x5263b46a79…](https://sepolia.etherscan.io/tx/0x5263b46a792964a13cff058a85f6f73e40898e29572572135a3b7643805ccc1c) |
-| 5. Approve de la estrategia | [0x15ac4509a9…](https://sepolia.etherscan.io/tx/0x15ac4509a9306352a72fb86647bcfcf6cfb6dd48edb748234c2605967a67afb4) |
-| 6. Bot reporta ganancia de +50 mUSDC | [0xbd279ea5a0…](https://sepolia.etherscan.io/tx/0xbd279ea5a001bae23539d6f112109d6fd1231f7b360326edbf66303b83d2200d) |
-| 7. Harvest (cobro de fee de performance) | [0x8520caccf2…](https://sepolia.etherscan.io/tx/0x8520caccf2221be249248c708f1ef322b055a4155c647ce330e95793eae91660) |
-| 8. Health check de la estrategia (circuit breaker) | [0x89a54008b5…](https://sepolia.etherscan.io/tx/0x89a54008b5dbd0150cb7f854161d9eb9bc009a46803b2cea8cb006f7e61fae5c) |
-| 9. Recall de 550.0 mUSDC | [0x6497084747…](https://sepolia.etherscan.io/tx/0x6497084747d4991c3c99509915a080de5dc53ddf8556fa84480334787e64a8c1) |
-| 10. Redeem de las shares del depósito | [0xa1cbb31bdf…](https://sepolia.etherscan.io/tx/0xa1cbb31bdf31674ce5f353967b842cf9a99ba9a91688271151739098ba46009f) |
+<!-- DEPLOY:START -->
+(se completa con `node scripts/update-readme.js` después de desplegar y correr la demo)
+<!-- DEPLOY:END -->
 
 ---
 
 ## 10. Seguridad: decisiones de diseño
 
+- **Ganancias graduales (anti depósito/retiro oportunista).** `totalAssets` no cuenta ganancias sin reportar; al reportarse se bloquean y se liberan linealmente durante `profitUnlockPeriod` (modelo similar a Yearn v3). `recall` y `emergencyRecallAll` reportan *antes* de mover fondos, así que no se puede cobrar la ganancia de golpe por esa vía.
+- **Pérdidas reconocidas de inmediato.** `totalAssets` usa `min(valor actual, valor reconocido)` por estrategia; al reportarse, la pérdida baja `debt`, consume primero la ganancia bloqueada y dispara el circuit breaker si supera `maxDrawdownBps`. `allocate` rechaza estrategias que ya superaron el drawdown aunque nadie las haya reportado (`StrategyInDrawdown`).
+- **Comisión pendiente en las vistas.** `_convertToShares`/`_convertToAssets` incluyen las shares de la comisión devengada, por lo que `previewRedeem/Withdraw/Deposit/Mint` coinciden con la ejecución (ERC-4626). `pendingFee()` expone el monto.
 - **Checks-Effects-Interactions** en `allocate` (actualiza `debt` y emite evento antes de `safeTransfer`) y `ReentrancyGuard` en todas las funciones que mueven fondos.
 - **`SafeERC20`** en todas las transferencias de tokens.
 - **Custom errors** con parámetros (sin strings de error) y **eventos** para toda operación relevante.
@@ -254,6 +250,9 @@ Desde la UI: conectar wallet → *faucet* → aprobar → depositar → (cuenta 
 5. **Sin oráculos de precios:** el circuit breaker usa el valor reportado por la estrategia, no un precio externo.
 6. **Sin auditoría profesional.** Proyecto académico.
 7. El token de la demo (`MockUSDC`) tiene faucet público.
+8. **Liberación gradual ≠ inmunidad total.** Quien deposita mucho capital y lo deja durante todo el período de liberación sí participa de la ganancia en proporción al tiempo que su capital estuvo expuesto. Un período largo (p. ej. 24 h en producción) encarece ese ataque; la demo usa 60 s solo para poder mostrarla en un video.
+9. **Retiro antes de una pérdida:** quien observa en el mempool una pérdida inminente puede retirar antes. Mitigaciones previstas: cola de retiros / período mínimo de permanencia (roadmap).
+10. **Estrategias reales** cuyo valor cambia sin una transacción propia dependen de un keeper que llame a `harvest` con frecuencia (Chainlink Automation en el roadmap). La estrategia de demo reporta sola tras cada operación.
 
 ---
 

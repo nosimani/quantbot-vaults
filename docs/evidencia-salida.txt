@@ -1,0 +1,225 @@
+
+> quantbot-vaults@0.1.0 test
+> hardhat test
+
+
+
+  MockTradingStrategy
+    ✔ expone asset, vault y límites configurados (3388ms)
+    ✔ solo el bot puede reportar operaciones
+    ✔ rechaza pnl cero
+    ✔ rechaza pérdidas por encima del límite por operación
+    ✔ una pérdida válida se envía al sumidero y reduce totalAssets (44ms)
+    ✔ una ganancia exige allowance del bot
+    ✔ withdraw solo puede ser llamado por la bóveda
+    ✔ valida el constructor
+
+  MockUSDC (token de prueba)
+    ✔ usa 6 decimales
+    ✔ faucet entrega tokens y aplica cooldown
+    ✔ mint solo para el owner
+
+  Fuzzing e invariantes (escenarios aleatorios)
+    ✔ secuencia aleatoria con semilla 1: se cumplen todas las invariantes (1087ms)
+    ✔ secuencia aleatoria con semilla 7: se cumplen todas las invariantes (875ms)
+    ✔ secuencia aleatoria con semilla 42: se cumplen todas las invariantes (832ms)
+    ✔ secuencia aleatoria con semilla 2024: se cumplen todas las invariantes (797ms)
+    ✔ secuencia aleatoria con semilla 31337: se cumplen todas las invariantes (796ms)
+    ✔ secuencia aleatoria con semilla 99999: se cumplen todas las invariantes (952ms)
+
+  Seguridad: ganancias graduales, pérdidas y comisiones pendientes
+    Ganancias: liberación gradual
+      ✔ ATAQUE: depositar antes de la ganancia y retirar después ya NO deja rendimiento (55ms)
+      ✔ la ganancia reportada se libera de forma lineal
+      ✔ una ganancia que nadie reportó (donación a la estrategia) no se cuenta hasta reportarla
+      ✔ recall no permite saltear el bloqueo: la ganancia vuelve como liquidez pero sigue bloqueada
+      ✔ emergencyRecallAll tampoco saltea el bloqueo
+      ✔ setProfitUnlockPeriod valida rango y permisos, y no produce saltos en totalAssets
+    Pérdidas
+      ✔ la pérdida se refleja de inmediato en totalAssets y baja la deuda
+      ✔ tras una pérdida y un recall total NO queda deuda residual ni se dispara de nuevo el circuit breaker
+      ✔ una pérdida consume primero la ganancia bloqueada (el total no cae por una ganancia y pérdida que se compensan)
+      ✔ una estrategia que ya superó el drawdown no recibe capital aunque nadie la haya reportado (140ms)
+    Comisión pendiente en las vistas ERC-4626
+      ✔ pendingFee informa la comisión devengada y previewRedeem la descuenta (61ms)
+      ✔ redeem entrega exactamente lo que prometió previewRedeem
+      ✔ withdraw quema exactamente las shares que prometió previewWithdraw
+      ✔ previewDeposit coincide con las shares acuñadas por deposit
+      ✔ después de cobrar la comisión ya no queda nada pendiente
+
+  QuantBotVault
+    Despliegue y configuración
+      ✔ inicializa parámetros, roles y metadatos (43ms)
+      ✔ revierte con parámetros inválidos en el constructor (40ms)
+    Depósitos y retiros (ERC-4626)
+      ✔ deposit acuña shares, emite evento y aumenta totalAssets
+      ✔ mint acuña exactamente las shares pedidas
+      ✔ redeem devuelve los activos depositados cuando no hubo ganancias
+      ✔ withdraw entrega el monto exacto de activos
+      ✔ respeta el tope de depósitos (depositCap)
+      ✔ el retiro está limitado por la liquidez del vault
+    Asignación de capital al bot (allocate / recall)
+      ✔ FLUJO PRINCIPAL: deposita, asigna, el bot genera ganancia, se cobra fee y se retira con rendimiento (44ms)
+      ✔ solo el operador puede asignar
+      ✔ el operador no puede enviar fondos a una dirección que no es estrategia registrada
+      ✔ revierte si el monto es cero
+      ✔ revierte si supera la liquidez disponible
+      ✔ revierte si supera el tope por estrategia
+      ✔ revierte si viola la reserva mínima de liquidez
+      ✔ recall: operador o guardián pueden recuperar; otros no
+    Pérdidas, circuit breaker y comisiones (high-water mark)
+      ✔ el circuit breaker desactiva automáticamente una estrategia que supera el drawdown máximo (100ms)
+      ✔ una estrategia dentro del drawdown se considera saludable
+      ✔ no cobra comisión sobre una recuperación hasta superar el high-water mark
+      ✔ un depósito nuevo no se cobra como ganancia
+      ✔ el guardián puede desactivar manualmente y el admin reactivar
+    Pausa y emergencias
+      ✔ en pausa se bloquean depósitos y asignaciones, pero los retiros siguen
+      ✔ solo el guardián puede pausar
+      ✔ emergencyRecallAll pausa y devuelve todo el capital al vault
+      ✔ emergencyRecallAll está restringido al guardián
+    Administración de estrategias y parámetros
+      ✔ addStrategy valida cero, duplicados, bps y compatibilidad
+      ✔ limita la cantidad de estrategias a MAX_STRATEGIES (63ms)
+      ✔ removeStrategy exige que esté vacía (45ms)
+      ✔ setStrategyCap actualiza el tope y valida
+      ✔ setters de parámetros: validan límites y permisos
+    Invariantes
+      ✔ la suma de lo retirable por todos nunca excede totalAssets (secuencia determinística) (56ms)
+
+
+  63 passing (10s)
+
+
+> quantbot-vaults@0.1.0 coverage
+> hardhat coverage
+
+
+Version
+=======
+> solidity-coverage: v0.8.17
+
+Instrumenting for coverage...
+=============================
+
+> interfaces/IStrategy.sol
+> interfaces/IVaultReporter.sol
+> mocks/MockUSDC.sol
+> QuantBotVault.sol
+> strategies/MockTradingStrategy.sol
+
+Compilation:
+============
+
+Compiled 29 Solidity files successfully (evm target: cancun).
+
+Network Info
+============
+> HardhatEVM: v2.29.1
+> network:    hardhat
+
+
+
+  MockTradingStrategy
+    ✔ expone asset, vault y límites configurados (150ms)
+    ✔ solo el bot puede reportar operaciones
+    ✔ rechaza pnl cero
+    ✔ rechaza pérdidas por encima del límite por operación (70ms)
+    ✔ una pérdida válida se envía al sumidero y reduce totalAssets (65ms)
+    ✔ una ganancia exige allowance del bot
+    ✔ withdraw solo puede ser llamado por la bóveda
+    ✔ valida el constructor
+
+  MockUSDC (token de prueba)
+    ✔ usa 6 decimales
+    ✔ faucet entrega tokens y aplica cooldown
+    ✔ mint solo para el owner
+
+  Fuzzing e invariantes (escenarios aleatorios)
+    ✔ secuencia aleatoria con semilla 1: se cumplen todas las invariantes (7293ms)
+    ✔ secuencia aleatoria con semilla 7: se cumplen todas las invariantes (7325ms)
+    ✔ secuencia aleatoria con semilla 42: se cumplen todas las invariantes (7167ms)
+    ✔ secuencia aleatoria con semilla 2024: se cumplen todas las invariantes (6836ms)
+    ✔ secuencia aleatoria con semilla 31337: se cumplen todas las invariantes (6808ms)
+    ✔ secuencia aleatoria con semilla 99999: se cumplen todas las invariantes (6794ms)
+
+  Seguridad: ganancias graduales, pérdidas y comisiones pendientes
+    Ganancias: liberación gradual
+      ✔ ATAQUE: depositar antes de la ganancia y retirar después ya NO deja rendimiento (269ms)
+      ✔ la ganancia reportada se libera de forma lineal (39ms)
+      ✔ una ganancia que nadie reportó (donación a la estrategia) no se cuenta hasta reportarla (39ms)
+      ✔ recall no permite saltear el bloqueo: la ganancia vuelve como liquidez pero sigue bloqueada (39ms)
+      ✔ emergencyRecallAll tampoco saltea el bloqueo (38ms)
+      ✔ setProfitUnlockPeriod valida rango y permisos, y no produce saltos en totalAssets (40ms)
+    Pérdidas
+      ✔ la pérdida se refleja de inmediato en totalAssets y baja la deuda
+      ✔ tras una pérdida y un recall total NO queda deuda residual ni se dispara de nuevo el circuit breaker (47ms)
+      ✔ una pérdida consume primero la ganancia bloqueada (el total no cae por una ganancia y pérdida que se compensan) (40ms)
+      ✔ una estrategia que ya superó el drawdown no recibe capital aunque nadie la haya reportado (48ms)
+    Comisión pendiente en las vistas ERC-4626
+      ✔ pendingFee informa la comisión devengada y previewRedeem la descuenta (192ms)
+      ✔ redeem entrega exactamente lo que prometió previewRedeem (53ms)
+      ✔ withdraw quema exactamente las shares que prometió previewWithdraw (78ms)
+      ✔ previewDeposit coincide con las shares acuñadas por deposit (47ms)
+      ✔ después de cobrar la comisión ya no queda nada pendiente
+
+  QuantBotVault
+    Despliegue y configuración
+      ✔ inicializa parámetros, roles y metadatos
+      ✔ revierte con parámetros inválidos en el constructor (80ms)
+    Depósitos y retiros (ERC-4626)
+      ✔ deposit acuña shares, emite evento y aumenta totalAssets (52ms)
+      ✔ mint acuña exactamente las shares pedidas (48ms)
+      ✔ redeem devuelve los activos depositados cuando no hubo ganancias (107ms)
+      ✔ withdraw entrega el monto exacto de activos (111ms)
+      ✔ respeta el tope de depósitos (depositCap) (95ms)
+      ✔ el retiro está limitado por la liquidez del vault (154ms)
+    Asignación de capital al bot (allocate / recall)
+      ✔ FLUJO PRINCIPAL: deposita, asigna, el bot genera ganancia, se cobra fee y se retira con rendimiento (175ms)
+      ✔ solo el operador puede asignar
+      ✔ el operador no puede enviar fondos a una dirección que no es estrategia registrada
+      ✔ revierte si el monto es cero
+      ✔ revierte si supera la liquidez disponible
+      ✔ revierte si supera el tope por estrategia (43ms)
+      ✔ revierte si viola la reserva mínima de liquidez (46ms)
+      ✔ recall: operador o guardián pueden recuperar; otros no (129ms)
+    Pérdidas, circuit breaker y comisiones (high-water mark)
+      ✔ el circuit breaker desactiva automáticamente una estrategia que supera el drawdown máximo (248ms)
+      ✔ una estrategia dentro del drawdown se considera saludable (39ms)
+      ✔ no cobra comisión sobre una recuperación hasta superar el high-water mark (128ms)
+      ✔ un depósito nuevo no se cobra como ganancia (39ms)
+      ✔ el guardián puede desactivar manualmente y el admin reactivar
+    Pausa y emergencias
+      ✔ en pausa se bloquean depósitos y asignaciones, pero los retiros siguen (108ms)
+      ✔ solo el guardián puede pausar
+      ✔ emergencyRecallAll pausa y devuelve todo el capital al vault (67ms)
+      ✔ emergencyRecallAll está restringido al guardián
+    Administración de estrategias y parámetros
+      ✔ addStrategy valida cero, duplicados, bps y compatibilidad
+      ✔ limita la cantidad de estrategias a MAX_STRATEGIES (98ms)
+      ✔ removeStrategy exige que esté vacía (85ms)
+      ✔ setStrategyCap actualiza el tope y valida
+      ✔ setters de parámetros: validan límites y permisos (52ms)
+    Invariantes
+      ✔ la suma de lo retirable por todos nunca excede totalAssets (secuencia determinística) (795ms)
+
+
+  63 passing (46s)
+
+--------------------------|----------|----------|----------|----------|----------------|
+File                      |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
+--------------------------|----------|----------|----------|----------|----------------|
+ contracts/               |    98.84 |    87.06 |    97.78 |     98.2 |                |
+  QuantBotVault.sol       |    98.84 |    87.06 |    97.78 |     98.2 |386,602,648,649 |
+ contracts/interfaces/    |      100 |      100 |      100 |      100 |                |
+  IStrategy.sol           |      100 |      100 |      100 |      100 |                |
+  IVaultReporter.sol      |      100 |      100 |      100 |      100 |                |
+ contracts/mocks/         |      100 |      100 |      100 |      100 |                |
+  MockUSDC.sol            |      100 |      100 |      100 |      100 |                |
+ contracts/strategies/    |      100 |    92.31 |      100 |      100 |                |
+  MockTradingStrategy.sol |      100 |    92.31 |      100 |      100 |                |
+--------------------------|----------|----------|----------|----------|----------------|
+All files                 |    98.99 |       88 |    98.21 |    98.44 |                |
+--------------------------|----------|----------|----------|----------|----------------|
+
+> Istanbul reports written to ./coverage/ and ./coverage.json

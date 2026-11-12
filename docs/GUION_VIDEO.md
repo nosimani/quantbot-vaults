@@ -13,3 +13,8 @@ Objetivo: mostrar problema, arquitectura, flujo principal funcionando con eviden
 | 4:45–5:00 | README: Limitaciones y Roadmap | Estrategias reales (Uniswap/Aave), Chainlink Automation, timelock + multisig, auditoría. |
 
 Consejos: grabar a 1080p, cursor visible, tener la wallet con ETH de Sepolia y los roles asignados **antes** de grabar, y ensayar una vez para no pasar de 5:00.
+
+## Cambios por las correcciones del docente
+- En la demo, después de **Reportar ganancia (+)** mostrá el panel "Protección contra depósitos/retiros oportunistas": la ganancia queda **bloqueada** y el contador baja hasta liberarse (60 s en Sepolia). Es la evidencia de la corrección de seguridad.
+- Esperá a que el contador llegue a 0 y recién ahí apretá **Reportar y cobrar fee (harvest)**, **Recuperar todo** y **Retirar**.
+- Mostrá en el README el link al video y subí el MP4 a la carpeta del Drive.

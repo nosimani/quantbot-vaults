@@ -10,3 +10,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 .DS_Store
+
+# Los ejemplos de variables SÍ se versionan (nunca los .env reales)
+!.env.example
+!frontend/.env.example

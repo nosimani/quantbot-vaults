@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const {
   usdc,
   deployFixture,
@@ -9,6 +9,7 @@ const {
   MIN_IDLE_BPS,
   MAX_DRAWDOWN_BPS,
   STRATEGY_CAP_BPS,
+  PROFIT_UNLOCK_PERIOD,
 } = require("./helpers/fixture");
 
 describe("QuantBotVault", function () {
@@ -25,6 +26,7 @@ describe("QuantBotVault", function () {
       expect(await vault.depositCap()).to.equal(DEPOSIT_CAP);
       expect(await vault.minIdleBps()).to.equal(MIN_IDLE_BPS);
       expect(await vault.maxDrawdownBps()).to.equal(MAX_DRAWDOWN_BPS);
+      expect(await vault.profitUnlockPeriod()).to.equal(PROFIT_UNLOCK_PERIOD);
 
       expect(await vault.hasRole(await vault.DEFAULT_ADMIN_ROLE(), owner.address)).to.equal(true);
       expect(await vault.hasRole(await vault.OPERATOR_ROLE(), operator.address)).to.equal(true);
@@ -145,10 +147,18 @@ describe("QuantBotVault", function () {
       // 3) El bot reporta una ganancia de 100 mUSDC
       await expect(strategy.connect(operator).executeTrade(usdc(100)))
         .to.emit(strategy, "TradeExecuted")
-        .withArgs(operator.address, usdc(100), usdc(600));
-      expect(await vault.totalAssets()).to.equal(usdc(1100));
+        .withArgs(operator.address, usdc(100), usdc(600))
+        .and.to.emit(vault, "GainReported")
+        .withArgs(strategyAddr, usdc(100));
 
-      // 4) Se cobra la comisión (20 % de 100 = 20 mUSDC) acuñando shares al treasury
+      // La ganancia se reconoce en el acto pero queda bloqueada: no se puede cobrar de golpe
+      expect(await vault.totalAssets()).to.be.closeTo(usdc(1000), usdc(1));
+      expect(await vault.lockedProfitRemaining()).to.be.closeTo(usdc(100), usdc(1));
+
+      // 4) Pasa el período de liberación: la ganancia ya es de los depositantes y se cobra la
+      //    comisión (20 % de 100 = 20 mUSDC) acuñando shares al treasury
+      await time.increase(PROFIT_UNLOCK_PERIOD);
+      expect(await vault.totalAssets()).to.equal(usdc(1100));
       await expect(vault.harvest()).to.emit(vault, "FeeAccrued");
       const treasuryAssets = await vault.convertToAssets(await vault.balanceOf(treasury.address));
       expect(treasuryAssets).to.be.closeTo(usdc(20), 1000n);
@@ -236,19 +246,19 @@ describe("QuantBotVault", function () {
       return base;
     }
 
-    it("el circuit breaker desactiva una estrategia que supera el drawdown máximo", async function () {
+    it("el circuit breaker desactiva automáticamente una estrategia que supera el drawdown máximo", async function () {
       const { vault, strategy, operator, strategyAddr } = await loadFixture(allocatedFixture);
 
-      // Pérdida de 100 sobre 500 = 20 % > 10 % permitido
-      await strategy.connect(operator).executeTrade(-usdc(100));
+      // Pérdida de 100 sobre 500 = 20 % > 10 % permitido: el bot reporta y el vault la reconoce en el acto
+      await expect(strategy.connect(operator).executeTrade(-usdc(100)))
+        .to.emit(vault, "LossReported")
+        .withArgs(strategyAddr, usdc(100))
+        .and.to.emit(vault, "StrategyTripped")
+        .withArgs(strategyAddr, usdc(500), usdc(400));
       expect(await vault.totalAssets()).to.equal(usdc(900));
 
-      expect(await vault.checkStrategyHealth.staticCall(strategyAddr)).to.equal(false);
-      await expect(vault.checkStrategyHealth(strategyAddr))
-        .to.emit(vault, "StrategyTripped")
-        .withArgs(strategyAddr, usdc(500), usdc(400));
-
       expect((await vault.strategyInfo(strategyAddr)).active).to.equal(false);
+      expect((await vault.strategyInfo(strategyAddr)).debt).to.equal(usdc(400));
       await expect(vault.connect(operator).allocate(strategyAddr, usdc(1)))
         .to.be.revertedWithCustomError(vault, "StrategyNotActive")
         .withArgs(strategyAddr);
@@ -265,11 +275,13 @@ describe("QuantBotVault", function () {
 
       await strategy.connect(operator).executeTrade(-usdc(100)); // total 900 (HWM 1000)
       await vault.harvest();
-      await strategy.connect(operator).executeTrade(usdc(50)); // total 950 < 1000
+      await strategy.connect(operator).executeTrade(usdc(50)); // se libera de a poco
+      await time.increase(PROFIT_UNLOCK_PERIOD); // total 950 < 1000
       await vault.harvest();
       expect(await vault.balanceOf(treasury.address)).to.equal(0n);
 
-      await strategy.connect(operator).executeTrade(usdc(100)); // total 1050 > 1000
+      await strategy.connect(operator).executeTrade(usdc(100));
+      await time.increase(PROFIT_UNLOCK_PERIOD); // total 1050 > 1000
       await vault.harvest();
       const feeAssets = await vault.convertToAssets(await vault.balanceOf(treasury.address));
       expect(feeAssets).to.be.closeTo(usdc(10), 1000n); // 20 % de 50

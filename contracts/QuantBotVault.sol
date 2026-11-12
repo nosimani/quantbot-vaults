@@ -19,7 +19,15 @@ import {IStrategy} from "./interfaces/IStrategy.sol";
 ///         riesgo aplicados on-chain: tope por estrategia, reserva mínima de liquidez,
 ///         circuit breaker por drawdown, pausa de emergencia y comisión de performance
 ///         con high-water mark.
-/// @dev Roles:
+/// @dev Contabilidad (anti-explotación por timing de depósitos/retiros):
+///      - Las GANANCIAS de una estrategia no se cuentan en `totalAssets` hasta que se reportan
+///        (`harvest`, `recall`, `checkStrategyHealth`). Al reportarse se bloquean y se liberan de forma
+///        LINEAL durante `profitUnlockPeriod`, de modo que depositar justo antes de una ganancia y
+///        retirar justo después no permite apropiarse de ella.
+///      - Las PÉRDIDAS se reflejan de inmediato en `totalAssets` y, al reportarse, consumen primero
+///        la ganancia bloqueada.
+///      - La comisión pendiente se incluye en las conversiones asset/share (previews exactos).
+///      Roles:
 ///      - `DEFAULT_ADMIN_ROLE`: registra/remueve estrategias, ajusta parámetros, reanuda el vault.
 ///      - `OPERATOR_ROLE`: wallet del bot; asigna (`allocate`) y recupera (`recall`) capital.
 ///      - `GUARDIAN_ROLE`: puede pausar, desactivar estrategias y ejecutar `emergencyRecallAll`.
@@ -64,6 +72,15 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
     /// @notice Cantidad máxima de estrategias simultáneas (acota el gas de `totalAssets`).
     uint256 public constant MAX_STRATEGIES = 10;
 
+    /// @notice Período de liberación de ganancias por defecto (6 horas).
+    uint256 public constant DEFAULT_PROFIT_UNLOCK_PERIOD = 6 hours;
+
+    /// @notice Período mínimo de liberación de ganancias configurable.
+    uint256 public constant MIN_PROFIT_UNLOCK_PERIOD = 1 minutes;
+
+    /// @notice Período máximo de liberación de ganancias configurable.
+    uint256 public constant MAX_PROFIT_UNLOCK_PERIOD = 7 days;
+
     // ---------------------------------------------------------------------
     // Estado
     // ---------------------------------------------------------------------
@@ -91,6 +108,15 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice High-water mark en activos: base sobre la cual se calcula la próxima comisión.
     uint256 public lastTotalAssets;
+
+    /// @notice Segundos durante los cuales se libera linealmente cada ganancia reportada.
+    uint256 public profitUnlockPeriod;
+
+    /// @notice Timestamp del último momento en que se (re)programó la liberación de ganancias.
+    uint256 public lastProfitReport;
+
+    /// @dev Ganancia bloqueada medida en `lastProfitReport`; decrece linealmente hasta 0.
+    uint256 private _lockedProfitSnapshot;
 
     // ---------------------------------------------------------------------
     // Eventos
@@ -170,6 +196,20 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
     /// @param newMaxDrawdownBps Nuevo valor en bps.
     event MaxDrawdownBpsUpdated(uint16 newMaxDrawdownBps);
 
+    /// @notice Se reconoció una ganancia de una estrategia (queda bloqueada y se libera linealmente).
+    /// @param strategy Estrategia que generó la ganancia.
+    /// @param gain Ganancia reconocida en activos.
+    event GainReported(address indexed strategy, uint256 gain);
+
+    /// @notice Se reconoció una pérdida de una estrategia (se descuenta de la deuda y de la ganancia bloqueada).
+    /// @param strategy Estrategia que generó la pérdida.
+    /// @param loss Pérdida reconocida en activos.
+    event LossReported(address indexed strategy, uint256 loss);
+
+    /// @notice Cambió el período de liberación de ganancias.
+    /// @param newPeriod Nuevo período en segundos.
+    event ProfitUnlockPeriodUpdated(uint256 newPeriod);
+
     // ---------------------------------------------------------------------
     // Errores
     // ---------------------------------------------------------------------
@@ -233,12 +273,24 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
     /// @param caller Dirección que intentó la llamada.
     error NotOperatorOrGuardian(address caller);
 
+    /// @notice El período de liberación de ganancias está fuera del rango permitido.
+    /// @param period Período recibido en segundos.
+    error InvalidUnlockPeriod(uint256 period);
+
+    /// @notice La estrategia ya superó el drawdown máximo: no puede recibir más capital.
+    /// @param strategy Dirección de la estrategia.
+    /// @param debt Valor reconocido de la estrategia.
+    /// @param current Valor actual de la estrategia.
+    error StrategyInDrawdown(address strategy, uint256 debt, uint256 current);
+
     // ---------------------------------------------------------------------
     // Constructor
     // ---------------------------------------------------------------------
 
     /// @notice Despliega el vault.
     /// @dev No otorga `OPERATOR_ROLE` ni `GUARDIAN_ROLE`: el admin debe hacerlo explícitamente.
+    ///      El período de liberación de ganancias arranca en `DEFAULT_PROFIT_UNLOCK_PERIOD`
+    ///      y se ajusta luego con `setProfitUnlockPeriod`.
     /// @param asset_ Token ERC20 subyacente.
     /// @param name_ Nombre del token de shares.
     /// @param symbol_ Símbolo del token de shares.
@@ -271,6 +323,7 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         depositCap = depositCap_;
         minIdleBps = minIdleBps_;
         maxDrawdownBps = maxDrawdownBps_;
+        profitUnlockPeriod = DEFAULT_PROFIT_UNLOCK_PERIOD;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
@@ -279,17 +332,46 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
     // Vistas
     // ---------------------------------------------------------------------
 
-    /// @notice Activos totales del vault: liquidez propia + valor de todas las estrategias.
-    /// @return total Suma de activos administrados, en unidades del token subyacente.
+    /// @notice Activos totales del vault que pertenecen a los depositantes.
+    /// @dev = liquidez propia + valor RECONOCIDO de cada estrategia (nunca más que su valor actual,
+    ///      por lo que las pérdidas se ven de inmediato) − ganancia aún bloqueada. La ganancia bloqueada
+    ///      se reduce primero por las pérdidas no reportadas. Las ganancias que una estrategia
+    ///      tiene pero nadie reportó todavía NO se cuentan.
+    /// @return total Activos totales en unidades del token subyacente.
     function totalAssets() public view override returns (uint256 total) {
-        total = IERC20(asset()).balanceOf(address(this));
+        uint256 idle = IERC20(asset()).balanceOf(address(this));
+        uint256 nominal = idle;
+        uint256 gross = idle;
         uint256 len = _strategies.length;
         for (uint256 i; i < len; ) {
-            total += IStrategy(_strategies[i]).totalAssets();
+            address strategy = _strategies[i];
+            uint256 recognized = strategyInfo[strategy].debt;
+            uint256 current = IStrategy(strategy).totalAssets();
+            nominal += recognized;
+            gross += current < recognized ? current : recognized;
             unchecked {
                 ++i;
             }
         }
+
+        uint256 locked = _remainingLockedProfit();
+        uint256 unrealizedLoss = nominal - gross; // nominal >= gross por construcción
+        uint256 effectiveLocked = locked > unrealizedLoss ? locked - unrealizedLoss : 0;
+        total = gross > effectiveLocked ? gross - effectiveLocked : 0;
+    }
+
+    /// @notice Ganancia reportada que todavía no se liberó a los depositantes.
+    /// @return Cantidad de activos aún bloqueados (decrece linealmente con el tiempo).
+    function lockedProfitRemaining() external view returns (uint256) {
+        return _remainingLockedProfit();
+    }
+
+    /// @notice Comisión de performance devengada pero todavía no cobrada.
+    /// @dev Las conversiones asset/share ya la incluyen, por lo que `previewX` coincide con la ejecución.
+    /// @return feeAssets Valor de la comisión pendiente en activos.
+    /// @return feeShares Shares que se acuñarían al treasury al cobrarla.
+    function pendingFee() external view returns (uint256 feeAssets, uint256 feeShares) {
+        (, feeAssets, feeShares) = _feeQuote(totalAssets());
     }
 
     /// @notice Liquidez disponible dentro del vault (no asignada a estrategias).
@@ -421,13 +503,26 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         if (amount > idle) revert InsufficientIdle(amount, idle);
 
         uint256 total = totalAssets();
-        uint256 idleAfter = idle - amount;
-        uint256 requiredIdle = (total * minIdleBps) / BPS;
-        if (idleAfter < requiredIdle) revert MinIdleReserveBreached(idleAfter, requiredIdle);
+        uint256 current = IStrategy(strategy).totalAssets();
 
-        uint256 wouldBe = IStrategy(strategy).totalAssets() + amount;
-        uint256 maxAllowed = (total * info.maxAllocationBps) / BPS;
-        if (wouldBe > maxAllowed) revert AllocationCapExceeded(wouldBe, maxAllowed);
+        {
+            // Reserva mínima de liquidez
+            uint256 idleAfter = idle - amount;
+            uint256 requiredIdle = (total * minIdleBps) / BPS;
+            if (idleAfter < requiredIdle) revert MinIdleReserveBreached(idleAfter, requiredIdle);
+        }
+        {
+            // Una estrategia que ya perdió más que el drawdown máximo no recibe capital,
+            // aunque nadie haya reportado todavía la pérdida.
+            uint256 floor = (uint256(info.debt) * (BPS - maxDrawdownBps)) / BPS;
+            if (current < floor) revert StrategyInDrawdown(strategy, info.debt, current);
+        }
+        {
+            // Tope por estrategia (sobre el valor reconocido, nunca sobre ganancias sin reportar)
+            uint256 wouldBe = (current < info.debt ? current : info.debt) + amount;
+            uint256 maxAllowed = (total * info.maxAllocationBps) / BPS;
+            if (wouldBe > maxAllowed) revert AllocationCapExceeded(wouldBe, maxAllowed);
+        }
 
         // Effects
         strategyInfo[strategy].debt = SafeCast.toUint128(uint256(info.debt) + amount);
@@ -447,6 +542,10 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         if (!strategyInfo[strategy].registered) revert StrategyNotRegistered(strategy);
         if (amount == 0) revert ZeroAmount();
 
+        // Reconoce ganancias/pérdidas ANTES de mover fondos: una ganancia que vuelve al vault
+        // como liquidez queda igualmente bloqueada y no se puede cobrar de golpe.
+        _reportStrategy(strategy);
+
         uint256 balanceBefore = IERC20(asset()).balanceOf(address(this));
         IStrategy(strategy).withdraw(amount);
         _settleRecall(strategy, amount, balanceBefore);
@@ -456,22 +555,14 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
     // Gestión de riesgo
     // ---------------------------------------------------------------------
 
-    /// @notice Circuit breaker: desactiva la estrategia si perdió más que `maxDrawdownBps`.
-    /// @dev Puede llamarla cualquiera (función permisionless, solo puede reducir riesgo).
+    /// @notice Reporta una estrategia y aplica el circuit breaker.
+    /// @dev Puede llamarla cualquiera: reconocer ganancias solo las bloquea y reconocer pérdidas
+    ///      solo reduce riesgo. Si la pérdida supera `maxDrawdownBps` la estrategia se desactiva.
     /// @param strategy Estrategia a evaluar.
-    /// @return healthy `true` si la estrategia sigue dentro del límite de drawdown.
-    function checkStrategyHealth(address strategy) external returns (bool healthy) {
-        StrategyInfo memory info = strategyInfo[strategy];
-        if (!info.registered) revert StrategyNotRegistered(strategy);
-        if (!info.active || info.debt == 0) return true;
-
-        uint256 current = IStrategy(strategy).totalAssets();
-        uint256 floor = (uint256(info.debt) * (BPS - maxDrawdownBps)) / BPS;
-        if (current >= floor) return true;
-
-        strategyInfo[strategy].active = false;
-        emit StrategyTripped(strategy, info.debt, current);
-        return false;
+    /// @return healthy `false` si el circuit breaker la desactivó en esta llamada.
+    function checkStrategyHealth(address strategy) external nonReentrant returns (bool healthy) {
+        if (!strategyInfo[strategy].registered) revert StrategyNotRegistered(strategy);
+        healthy = _reportStrategy(strategy);
     }
 
     /// @notice Pausa depósitos y nuevas asignaciones. Los retiros siguen habilitados.
@@ -501,7 +592,8 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         uint256 len = _strategies.length;
         for (uint256 i; i < len; ) {
             address strategy = _strategies[i];
-            uint256 amount = IStrategy(strategy).totalAssets();
+            _reportStrategy(strategy);
+            uint256 amount = strategyInfo[strategy].debt;
             if (amount > 0) {
                 uint256 balanceBefore = token.balanceOf(address(this));
                 try IStrategy(strategy).withdraw(amount) {
@@ -597,6 +689,19 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         emit TreasuryUpdated(newTreasury);
     }
 
+    /// @notice Cambia el período de liberación lineal de ganancias.
+    /// @dev Congela lo que falta liberar para que el cambio no produzca saltos en `totalAssets`.
+    /// @param newPeriod Nuevo período en segundos (`MIN_PROFIT_UNLOCK_PERIOD`..`MAX_PROFIT_UNLOCK_PERIOD`).
+    function setProfitUnlockPeriod(uint256 newPeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newPeriod < MIN_PROFIT_UNLOCK_PERIOD || newPeriod > MAX_PROFIT_UNLOCK_PERIOD) {
+            revert InvalidUnlockPeriod(newPeriod);
+        }
+        _lockedProfitSnapshot = _remainingLockedProfit();
+        lastProfitReport = block.timestamp;
+        profitUnlockPeriod = newPeriod;
+        emit ProfitUnlockPeriodUpdated(newPeriod);
+    }
+
     /// @notice Cambia el tope de activos totales del vault.
     /// @param newCap Nuevo tope.
     function setDepositCap(uint256 newCap) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -620,8 +725,16 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         emit MaxDrawdownBpsUpdated(newMaxDrawdownBps);
     }
 
-    /// @notice Cobra la comisión de performance pendiente. Cualquiera puede llamarla.
+    /// @notice Reporta todas las estrategias (reconoce ganancias y pérdidas) y cobra la comisión
+    ///         de performance devengada. Cualquiera puede llamarla.
     function harvest() external nonReentrant {
+        uint256 len = _strategies.length;
+        for (uint256 i; i < len; ) {
+            _reportStrategy(_strategies[i]);
+            unchecked {
+                ++i;
+            }
+        }
         _accrueFee();
     }
 
@@ -635,26 +748,116 @@ contract QuantBotVault is ERC4626, AccessControl, Pausable, ReentrancyGuard {
         return 3;
     }
 
+    /// @dev Calcula la comisión devengada sobre las ganancias por encima del high-water mark.
+    /// @param total `totalAssets()` ya calculado (evita recorrer las estrategias dos veces).
+    /// @return profit Ganancia sobre el high-water mark.
+    /// @return feeAssets Comisión en activos.
+    /// @return feeShares Shares que valen `feeAssets` al precio posterior a la acuñación.
+    function _feeQuote(uint256 total) internal view returns (uint256 profit, uint256 feeAssets, uint256 feeShares) {
+        uint256 last = lastTotalAssets;
+        if (total <= last) return (0, 0, 0);
+
+        profit = total - last;
+        feeAssets = (profit * performanceFeeBps) / BPS;
+        if (feeAssets == 0) return (profit, 0, 0);
+
+        feeShares = feeAssets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), total - feeAssets + 1);
+    }
+
     /// @dev Cobra la comisión sobre las ganancias nuevas por encima del high-water mark,
     ///      acuñando shares al treasury. Si hay pérdidas no modifica el high-water mark,
     ///      de modo que las recuperaciones no se comisionan dos veces.
     function _accrueFee() internal {
         uint256 total = totalAssets();
-        uint256 last = lastTotalAssets;
-        if (total <= last) return;
+        if (total <= lastTotalAssets) return;
 
-        uint256 profit = total - last;
-        uint256 feeAssets = (profit * performanceFeeBps) / BPS;
+        (uint256 profit, uint256 feeAssets, uint256 feeShares) = _feeQuote(total);
         lastTotalAssets = total;
-        if (feeAssets == 0) return;
-
-        // Shares que valen `feeAssets` al precio posterior a la acuñación.
-        uint256 feeShares = feeAssets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), total - feeAssets + 1);
         if (feeShares == 0) return;
 
         address to = treasury;
         emit FeeAccrued(to, profit, feeAssets, feeShares);
         _mint(to, feeShares);
+    }
+
+    /// @dev Activos totales y oferta de shares incluyendo las shares de la comisión pendiente.
+    /// @return total `totalAssets()`.
+    /// @return supply `totalSupply()` + shares que se acuñarían al cobrar la comisión.
+    function _totalsWithPendingFee() private view returns (uint256 total, uint256 supply) {
+        total = totalAssets();
+        (, , uint256 feeShares) = _feeQuote(total);
+        supply = totalSupply() + feeShares;
+    }
+
+    /// @dev Conversión activos → shares que ya descuenta la comisión pendiente (previews exactos).
+    /// @param assets Activos a convertir.
+    /// @param rounding Sentido de redondeo.
+    /// @return Shares equivalentes.
+    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
+        (uint256 total, uint256 supply) = _totalsWithPendingFee();
+        return assets.mulDiv(supply + 10 ** _decimalsOffset(), total + 1, rounding);
+    }
+
+    /// @dev Conversión shares → activos que ya descuenta la comisión pendiente (previews exactos).
+    /// @param shares Shares a convertir.
+    /// @param rounding Sentido de redondeo.
+    /// @return Activos equivalentes.
+    function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {
+        (uint256 total, uint256 supply) = _totalsWithPendingFee();
+        return shares.mulDiv(total + 1, supply + 10 ** _decimalsOffset(), rounding);
+    }
+
+    /// @dev Ganancia que sigue bloqueada en este instante (liberación lineal).
+    /// @return Cantidad de activos todavía no liberados.
+    function _remainingLockedProfit() internal view returns (uint256) {
+        uint256 locked = _lockedProfitSnapshot;
+        if (locked == 0) return 0;
+        uint256 period = profitUnlockPeriod;
+        uint256 elapsed = block.timestamp - lastProfitReport;
+        if (elapsed >= period) return 0;
+        return locked.mulDiv(period - elapsed, period);
+    }
+
+    /// @dev Reconoce en la contabilidad el resultado de una estrategia y aplica el circuit breaker.
+    ///      Ganancia: sube `debt` y la bloquea (se libera linealmente).
+    ///      Pérdida: baja `debt`, consume primero la ganancia bloqueada y, si supera el drawdown
+    ///      máximo, desactiva la estrategia.
+    /// @param strategy Estrategia a reportar (debe estar registrada).
+    /// @return healthy `false` solo si el circuit breaker la desactivó en esta llamada.
+    function _reportStrategy(address strategy) internal returns (bool healthy) {
+        StrategyInfo memory info = strategyInfo[strategy];
+        uint256 recognized = info.debt;
+        uint256 current = IStrategy(strategy).totalAssets();
+        healthy = true;
+
+        if (current > recognized) {
+            uint256 gain = current - recognized;
+            strategyInfo[strategy].debt = SafeCast.toUint128(current);
+            _lockedProfitSnapshot = _remainingLockedProfit() + gain;
+            lastProfitReport = block.timestamp;
+            emit GainReported(strategy, gain);
+        } else if (current < recognized) {
+            uint256 loss = recognized - current;
+            strategyInfo[strategy].debt = SafeCast.toUint128(current);
+            _absorbLoss(loss);
+            emit LossReported(strategy, loss);
+
+            uint256 floor = (recognized * (BPS - maxDrawdownBps)) / BPS;
+            if (info.active && current < floor) {
+                strategyInfo[strategy].active = false;
+                emit StrategyTripped(strategy, recognized, current);
+                healthy = false;
+            }
+        }
+    }
+
+    /// @dev Descuenta una pérdida de la ganancia bloqueada manteniendo el mismo calendario de liberación.
+    /// @param loss Pérdida reconocida.
+    function _absorbLoss(uint256 loss) private {
+        uint256 locked = _remainingLockedProfit();
+        if (locked == 0) return;
+        uint256 absorbed = loss < locked ? loss : locked;
+        _lockedProfitSnapshot = _lockedProfitSnapshot.mulDiv(locked - absorbed, locked);
     }
 
     /// @dev Reconcilia `debt` y emite `Recalled` tras un retiro de estrategia.

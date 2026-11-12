@@ -14,7 +14,8 @@
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "verify:sepolia": "hardhat run scripts/verify.js --network sepolia",
     "demo:local": "hardhat run scripts/demo.js",
-    "demo:sepolia": "hardhat run scripts/demo.js --network sepolia"
+    "demo:sepolia": "hardhat run scripts/demo.js --network sepolia",
+    "evidencia": "(npm test 2>&1; npm run coverage 2>&1) | sed 's/\\x1b\\[[0-9;]*m//g' > docs/evidencia-salida.txt"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

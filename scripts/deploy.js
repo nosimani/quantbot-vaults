@@ -45,6 +45,7 @@ async function deployAll({ log = console.log } = {}) {
   const strategyCapBps = Number(env.STRATEGY_CAP_BPS || 5000);
   const maxLossPerTradeBps = Number(env.MAX_LOSS_PER_TRADE_BPS || 2000);
   const depositCap = ethers.parseUnits(env.DEPOSIT_CAP || "1000000", decimals);
+  const profitUnlockPeriod = Number(env.PROFIT_UNLOCK_PERIOD || 21600); // 6 h por defecto
 
   // --- Vault --------------------------------------------------------------
   const vaultArgs = [
@@ -75,6 +76,10 @@ async function deployAll({ log = console.log } = {}) {
   await (await vault.grantRole(await vault.GUARDIAN_ROLE(), guardian)).wait();
   await (await strategy.grantRole(await strategy.BOT_ROLE(), operator)).wait();
   await (await vault.addStrategy(strategyAddr, strategyCapBps)).wait();
+  if (BigInt(profitUnlockPeriod) !== (await vault.profitUnlockPeriod())) {
+    await (await vault.setProfitUnlockPeriod(profitUnlockPeriod)).wait();
+  }
+  log(`Liberación lineal de ganancias: ${profitUnlockPeriod} s`);
   log(`Roles configurados | operator/bot: ${operator} | guardian: ${guardian}`);
 
   const explorer = EXPLORERS[chainId] || null;
@@ -90,6 +95,7 @@ async function deployAll({ log = console.log } = {}) {
       strategy: { address: strategyAddr, constructorArgs: strategyArgs },
     },
     roles: { admin: deployer.address, operator, guardian, treasury },
+    profitUnlockPeriod,
   };
 
   if (network.name !== "hardhat") {

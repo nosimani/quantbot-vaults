@@ -5,12 +5,16 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IStrategy} from "../interfaces/IStrategy.sol";
+import {IVaultReporter} from "../interfaces/IVaultReporter.sol";
 
 /// @title MockTradingStrategy
 /// @notice Estrategia de demostración que simula el resultado (PnL) de un bot de trading.
 /// @dev Representa el "lado off-chain" del protocolo: un bot con `BOT_ROLE` reporta
 ///      ganancias (aportando fondos reales desde su wallet) o pérdidas (que se envían a
 ///      `LOSS_SINK`). Incluye un límite de pérdida por operación como control de riesgo.
+///      Tras cada operación avisa a la bóveda (`checkStrategyHealth`) para que reconozca el resultado
+///      en el mismo instante: las ganancias quedan bloqueadas y se liberan gradualmente, y las pérdidas
+///      se dan de baja de inmediato (con circuit breaker automático).
 ///      En una versión productiva este contrato se reemplaza por adaptadores a DEXs/lending.
 contract MockTradingStrategy is IStrategy, AccessControl {
     using SafeERC20 for IERC20;
@@ -118,6 +122,12 @@ contract MockTradingStrategy is IStrategy, AccessControl {
         }
 
         emit TradeExecuted(msg.sender, pnl, _asset.balanceOf(address(this)));
+
+        // Reporte inmediato a la bóveda. Si la bóveda aún no registró esta estrategia (o no existe),
+        // la operación no debe fallar: el reporte se hará luego con `harvest`.
+        if (_vault.code.length != 0) {
+            try IVaultReporter(_vault).checkStrategyHealth(address(this)) returns (bool) {} catch {}
+        }
     }
 
     /// @inheritdoc IStrategy

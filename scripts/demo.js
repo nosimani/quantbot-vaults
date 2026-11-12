@@ -1,7 +1,7 @@
 /**
  * Demo del flujo principal de QuantBot Vaults, ejecutado de principio a fin on-chain:
- *   faucet -> approve -> deposit -> allocate (bot) -> trade con ganancia (bot) -> harvest (fee)
- *   -> health check -> recall -> redeem
+ *   faucet -> approve -> deposit -> allocate (bot) -> trade con ganancia (bot) -> harvest (reporta y
+ *   bloquea la ganancia) -> espera la liberación lineal -> harvest (fee) -> health check -> recall -> redeem
  * Imprime y guarda los hashes de transacción (evidencia para README y video).
  *
  * Uso local:    npx hardhat run scripts/demo.js
@@ -68,19 +68,34 @@ async function main() {
 
   // 4) El bot reporta ganancia de 50 mUSDC
   await step("5. Approve de la estrategia", token.approve(s.address, ethers.MaxUint256));
+  const totalBeforeGain = await vault.totalAssets();
   await step("6. Bot reporta ganancia de +50 mUSDC", strategy.executeTrade(usdc(50)));
-  console.log(`    totalAssets del vault: ${fmt(await vault.totalAssets())} mUSDC`);
+  console.log(`    totalAssets: ${fmt(totalBeforeGain)} -> ${fmt(await vault.totalAssets())} mUSDC (la ganancia aún no se cuenta)`);
 
-  // 5) Comisión de performance y control de salud
-  await step("7. Harvest (cobro de fee de performance)", vault.harvest());
-  await step("8. Health check de la estrategia (circuit breaker)", vault.checkStrategyHealth(s.address));
+  // 5) La ganancia se reconoce, queda bloqueada y se libera de forma gradual (anti depósito/retiro oportunista)
+  await step("7. Harvest: reconoce y bloquea la ganancia", vault.harvest());
+  console.log(`    Ganancia bloqueada: ${fmt(await vault.lockedProfitRemaining())} mUSDC | totalAssets: ${fmt(await vault.totalAssets())} mUSDC`);
+
+  const period = Number(await vault.profitUnlockPeriod());
+  console.log(`    Esperando ${period} s a que se libere la ganancia...`);
+  if (isLocal) {
+    await hre.network.provider.send("evm_increaseTime", [period + 1]);
+    await hre.network.provider.send("evm_mine");
+  } else {
+    await new Promise((r) => setTimeout(r, (period + 20) * 1000));
+  }
+  console.log(`    Ganancia bloqueada: ${fmt(await vault.lockedProfitRemaining())} mUSDC | totalAssets: ${fmt(await vault.totalAssets())} mUSDC`);
+
+  // 6) Comisión de performance y control de salud
+  await step("8. Harvest (cobro de fee de performance)", vault.harvest());
+  await step("9. Health check de la estrategia (circuit breaker)", vault.checkStrategyHealth(s.address));
 
   // 6) Recuperar capital y retirar
   const inStrategy = await strategy.totalAssets();
-  await step(`9. Recall de ${fmt(inStrategy)} mUSDC`, vault.recall(s.address, inStrategy));
+  await step(`10. Recall de ${fmt(inStrategy)} mUSDC`, vault.recall(s.address, inStrategy));
 
   const before = await token.balanceOf(signer.address);
-  await step("10. Redeem de las shares del depósito", vault.redeem(userShares, signer.address, signer.address));
+  await step("11. Redeem de las shares del depósito", vault.redeem(userShares, signer.address, signer.address));
   const after = await token.balanceOf(signer.address);
 
   console.log(`\nRetiro recibido: ${fmt(after - before)} mUSDC (depositó 1000; ganancia neta de fee)`);
