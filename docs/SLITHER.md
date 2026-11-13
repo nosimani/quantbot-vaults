@@ -58,3 +58,34 @@ El contrato cambió (liberación gradual de ganancias, reporte de estrategias, c
 | `calls-loop` | `totalAssets`, `harvest`, `emergencyRecallAll` | Aceptado | Bucles acotados por `MAX_STRATEGIES = 10` sobre estrategias registradas por el admin. |
 | `reentrancy-*` | `recall`, `emergencyRecallAll` | Aceptado | Protegidas por `nonReentrant`; `debt` se concilia con lo realmente recibido. |
 | `incorrect-equality` | comparaciones contra 0 | Falso positivo | Evitan trabajo inútil o divisiones por cero; no dependen de balances manipulables. |
+
+## Segunda ejecución (contrato corregido, 13/11/2026)
+
+Slither 29 contratos / 102 detectores: **55 resultados, 0 High**, 11 Medium, 34 Low, 10 Informational.
+
+| Severidad | Detector | Cant. | Decisión |
+|---|---|---|---|
+| Medium | incorrect-equality | 6 | Justificado |
+| Medium | unused-return | 3 | Justificado |
+| Medium | reentrancy-no-eth | 2 | Justificado |
+| Low | calls-loop | 24 | Justificado |
+| Low | timestamp | 10 | Justificado |
+| Informational | costly-loop | 7 | Aceptado |
+| Informational | dead-code | 2 | Aceptado |
+| Informational | missing-inheritance | 1 | Aceptado |
+
+### Medium
+- **incorrect-equality (6)**: son comparaciones `== 0` (por ejemplo en `_accrueFee`, en montos y en `totalSupply`). Solo sirven para evitar divisiones por cero u operaciones vacías. No dependen de un balance que un atacante pueda manipular con una donación para bloquear el contrato; en el peor caso se omite un cálculo.
+- **unused-return (3)**: `IStrategy.withdraw` devuelve un monto, pero el vault no confía en ese valor. Mide lo recibido de verdad con la diferencia de `balanceOf` antes y después. En `MockTradingStrategy.executeTrade`, `checkStrategyHealth` es solo una notificación al vault y no necesita valor de retorno.
+- **reentrancy-no-eth (2)** en `recall` y `emergencyRecallAll`: la llamada externa es a una estrategia aprobada por el admin (lista blanca, no a una dirección arbitraria). Ambas funciones usan `nonReentrant` y están restringidas por rol (`OPERATOR`/`GUARDIAN`). Se actualiza el estado después de `withdraw` a propósito, para contabilizar lo realmente recibido. Los tests de seguridad incluyen el caso de recall sin saltar el bloqueo de profit.
+
+### Low
+- **calls-loop (24)**: se recorren las estrategias del vault (lista corta y acotada por el admin) y se llama a contratos de confianza. No hay llamadas a direcciones arbitrarias del usuario.
+- **timestamp (10)**: es intencional. El desbloqueo lineal del profit usa `block.timestamp`; el período mínimo es de 1 minuto, mucho mayor que el margen que puede mover un validador (segundos).
+
+### Informational
+- **costly-loop (7)**: escrituras de storage dentro de bucles sobre la lista acotada de estrategias.
+- **dead-code (2)**: sobrescritura (`override`) de hooks de OpenZeppelin ERC-4626 que la base invoca internamente. Slither no resuelve esa llamada heredada.
+- **missing-inheritance (1)**: `QuantBotVault` es llamado a través de `IVaultReporter` pero no declara la herencia. No tiene impacto de seguridad; se deja como mejora para una próxima versión para no redesplegar.
+
+Conclusión: **sin hallazgos de severidad alta**; el resto está revisado y justificado.
